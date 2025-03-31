@@ -1,7 +1,7 @@
 {
   "name": "PBD Buddy",
   "short_name": "PBD Buddy",
-  "description": "Your Process Behavior Diagram Assistant",
+  "description": "Your Play by Discord GM Assistant",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#ffffff",
