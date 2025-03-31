@@ -1,0 +1,14 @@
+---
+description: 
+globs: 
+---
+
+# Your rule content
+
+- Frontend: Svelte + SvelteKit
+- Storage: LocalStorage OR IndexedDB (Dexie.js)
+- Clipboard Handling: Native Clipboard API
+- PWA Framework: Workbox.js for caching
+- Deploying to Vercel (free account)
+
+- CI/CD Needed? Yes, using Vercel
