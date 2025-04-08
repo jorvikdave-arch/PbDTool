@@ -2,6 +2,10 @@ import { writable, derived } from "svelte/store";
 import { db } from "./db";
 import type { Character, GameInstance, Encounter } from "./types";
 import { isRelatedCharacterType } from "./types";
+import { characterService } from '../services/characterService';
+import { encounterService } from '../services/encounterService';
+import { gameInstanceService } from '../services/gameInstanceService';
+import { initDB } from '../db';
 
 /**
  * Represents the global state of the game application
@@ -78,152 +82,83 @@ function validateCharacter(
 
 // Create the main store
 function createGameStore() {
-  const { subscribe, update } = writable<GameState>(initialState);
+  const { subscribe, set, update } = writable<GameState>(initialState);
 
   return {
     subscribe,
     // Initialize the store with data from IndexedDB
     async init() {
-      update((state) => ({ ...state, loading: true }));
       try {
-        await db.init();
+        await initDB();
+        
         // Load all initial data
-        const [characters, instances] = await Promise.all([
-          db.getAllCharacters(),
-          db.getAllInstances(),
+        const [characters, instances, encounters] = await Promise.all([
+          characterService.getAll(),
+          gameInstanceService.getAll(),
+          encounterService.getAll()
         ]);
 
-        update((state) => ({
-          ...state,
+        set({
           loading: false,
-          characters: new Map(characters.map((c) => [c.id, c])),
-          instances: new Map(instances.map((s) => [s.id, s])),
-        }));
+          characters: new Map(characters.map((c: Character) => [c.id, c])),
+          instances: new Map(instances.map((i: GameInstance) => [i.id, i])),
+          encounters: new Map(encounters.map((e: Encounter) => [e.id, e]))
+        });
       } catch (error) {
-        update((state) => ({
-          ...state,
+        console.error('Error initializing game store:', error);
+        set({
           loading: false,
-          error: error instanceof Error ? error.message : "Unknown error",
-        }));
+          characters: new Map(),
+          instances: new Map(),
+          encounters: new Map(),
+          error: 'Failed to initialize game store'
+        });
       }
     },
 
     // Character methods
-    async addCharacter(
-      instanceId: string,
-      character: Omit<Character, "id" | "instanceId" | "lastUpdated">,
-    ) {
-      update((state) => ({ ...state, loading: true }));
+    async createCharacter(character: Omit<Character, 'id'>) {
       try {
-        // Validate character data
-        validateCharacter(character);
-
-        // Verify instance exists
-        const instance = await db.getInstance(instanceId);
-        if (!instance) throw new Error("Instance not found");
-
-        // Verify relatedCharacterId if provided
-        if (character.relatedCharacterId) {
-          const relatedChar = await db.getCharacter(
-            character.relatedCharacterId,
-          );
-          if (!relatedChar) throw new Error("Related character not found");
-          if (relatedChar.instanceId !== instanceId) {
-            throw new Error("Related character must be in the same instance");
-          }
-        }
-
-        const newCharacter: Character = {
-          ...character,
-          id: crypto.randomUUID(),
-          instanceId,
-          lastUpdated: new Date(),
-        };
-        await db.addCharacter(newCharacter);
+        const newCharacter = await characterService.create(character);
         update((state) => ({
           ...state,
-          loading: false,
-          characters: new Map(state.characters).set(
-            newCharacter.id,
-            newCharacter,
-          ),
+          characters: new Map(state.characters).set(newCharacter.id, newCharacter)
         }));
+        return newCharacter;
       } catch (error) {
-        update((state) => ({
-          ...state,
-          loading: false,
-          error: error instanceof Error ? error.message : "Unknown error",
-        }));
+        console.error('Error creating character:', error);
         throw error;
       }
     },
 
-    async updateCharacter(id: string, updates: Partial<Character>) {
-      update((state) => ({ ...state, loading: true }));
+    async updateCharacter(id: string, character: Partial<Character>) {
       try {
-        const character = await db.getCharacter(id);
-        if (!character) throw new Error("Character not found");
-
-        const updatedCharacter = {
-          ...character,
-          ...updates,
-          lastUpdated: new Date(),
-        };
-
-        // Validate the updated character
-        validateCharacter(updatedCharacter);
-
-        // If type is changing, verify relatedCharacterId constraints
-        if (updates.type && updates.type !== character.type) {
-          if (
-            isRelatedCharacterType(updates.type) &&
-            !updatedCharacter.relatedCharacterId
-          ) {
-            throw new ValidationError(
-              `${updates.type} must have a related character ID`,
-            );
+        await characterService.update(id, character);
+        update((state) => {
+          const characters = new Map(state.characters);
+          const existing = characters.get(id);
+          if (existing) {
+            characters.set(id, { ...existing, ...character });
           }
-          if (
-            !isRelatedCharacterType(updates.type) &&
-            updatedCharacter.relatedCharacterId
-          ) {
-            throw new ValidationError(
-              `${updates.type} cannot have a related character ID`,
-            );
-          }
-        }
-
-        await db.addCharacter(updatedCharacter);
-        update((state) => ({
-          ...state,
-          loading: false,
-          characters: new Map(state.characters).set(id, updatedCharacter),
-        }));
+          return { ...state, characters };
+        });
       } catch (error) {
-        update((state) => ({
-          ...state,
-          loading: false,
-          error: error instanceof Error ? error.message : "Unknown error",
-        }));
+        console.error('Error updating character:', error);
         throw error;
       }
     },
 
     async deleteCharacter(id: string) {
-      update((state) => ({ ...state, loading: true }));
       try {
-        await db.deleteCharacter(id);
+        await characterService.delete(id);
         update((state) => {
           const characters = new Map(state.characters);
           characters.delete(id);
-          return { ...state, loading: false, characters };
+          return { ...state, characters };
         });
       } catch (error) {
-        update((state) => ({
-          ...state,
-          loading: false,
-          error: error instanceof Error ? error.message : "Unknown error",
-        }));
+        console.error('Error deleting character:', error);
+        throw error;
       }
     },
 
@@ -375,121 +310,47 @@ function createGameStore() {
     },
 
     // Session methods
-    /**
-     * Creates a new game instance
-     * @param instanceData - Initial instance data (without id, timestamps, and status)
-     * @returns Promise resolving when the instance is created
-     */
-    async createInstance(
-      instanceData: Omit<
-        GameInstance,
-        "id" | "createdAt" | "lastAccessed" | "status"
-      >,
-    ) {
-      update((state) => ({ ...state, loading: true }));
+    async createInstance(instance: Omit<GameInstance, 'id'>) {
       try {
-        const newInstance: GameInstance = {
-          ...instanceData,
-          id: crypto.randomUUID(),
-          createdAt: new Date(),
-          lastAccessed: new Date(),
-          status: "active",
-        };
-
-        await db.addInstance(newInstance);
+        const newInstance = await gameInstanceService.create(instance);
         update((state) => ({
           ...state,
-          loading: false,
-          instances: new Map(state.instances).set(newInstance.id, newInstance),
+          instances: new Map(state.instances).set(newInstance.id, newInstance)
         }));
-        return newInstance.id;
+        return newInstance;
       } catch (error) {
-        update((state) => ({
-          ...state,
-          loading: false,
-          error: error instanceof Error ? error.message : "Unknown error",
-        }));
+        console.error('Error creating game instance:', error);
         throw error;
       }
     },
 
-    /**
-     * Updates an existing game instance
-     * @param instanceId - ID of the instance to update
-     * @param updates - Partial instance data to update
-     * @throws {Error} If instance not found
-     */
-    async updateInstance(instanceId: string, updates: Partial<GameInstance>) {
-      update((state) => ({ ...state, loading: true }));
+    async updateInstance(id: string, instance: Partial<GameInstance>) {
       try {
-        const instance = await db.getInstance(instanceId);
-        if (!instance) throw new Error("Instance not found");
-
-        const updatedInstance = {
-          ...instance,
-          ...updates,
-          lastAccessed: new Date(),
-        };
-
-        await db.addInstance(updatedInstance);
-        update((state) => ({
-          ...state,
-          loading: false,
-          instances: new Map(state.instances).set(instanceId, updatedInstance),
-        }));
-      } catch (error) {
-        update((state) => ({
-          ...state,
-          loading: false,
-          error: error instanceof Error ? error.message : "Unknown error",
-        }));
-        throw error;
-      }
-    },
-
-    /**
-     * Updates the status of a game instance
-     * @param instanceId - ID of the instance to update
-     * @param status - New status value
-     * @throws {Error} If instance not found
-     */
-    async updateInstanceStatus(
-      instanceId: string,
-      status: GameInstance["status"],
-    ) {
-      return this.updateInstance(instanceId, { status });
-    },
-
-    /**
-     * Updates the tags of a game instance
-     * @param instanceId - ID of the instance to update
-     * @param tags - Array of tags to set
-     * @throws {Error} If instance not found
-     */
-    async updateInstanceTags(instanceId: string, tags: string[]) {
-      const normalizedTags = [...new Set(tags)].sort(); // Deduplicate and sort tags
-      return this.updateInstance(instanceId, { tags: normalizedTags });
-    },
-
-    /**
-     * Deletes a game instance and all associated data
-     * @param instanceId - ID of the instance to delete
-     */
-    async deleteInstance(instanceId: string) {
-      update((state) => ({ ...state, loading: true }));
-      try {
-        await db.deleteInstance(instanceId);
+        await gameInstanceService.update(id, instance);
         update((state) => {
           const instances = new Map(state.instances);
-          instances.delete(instanceId);
-          return { ...state, loading: false, instances };
+          const existing = instances.get(id);
+          if (existing) {
+            instances.set(id, { ...existing, ...instance });
+          }
+          return { ...state, instances };
         });
       } catch (error) {
-        update((state) => ({
-          ...state,
-          loading: false,
-          error: error instanceof Error ? error.message : "Unknown error",
-        }));
+        console.error('Error updating game instance:', error);
+        throw error;
+      }
+    },
+
+    async deleteInstance(id: string) {
+      try {
+        await gameInstanceService.delete(id);
+        update((state) => {
+          const instances = new Map(state.instances);
+          instances.delete(id);
+          return { ...state, instances };
+        });
+      } catch (error) {
+        console.error('Error deleting game instance:', error);
         throw error;
       }
     },
@@ -566,39 +427,47 @@ function createGameStore() {
     },
 
     // Encounter methods
-    async createEncounter(sessionId: string, name: string) {
-      update((state) => ({ ...state, loading: true }));
+    async createEncounter(encounter: Omit<Encounter, 'id'>) {
       try {
-        const session = await db.getInstance(sessionId);
-        if (!session) throw new Error("Session not found");
-
-        const newEncounter: Encounter = {
-          id: crypto.randomUUID(),
-          sessionId,
-          name,
-          currentRound: 0,
-          currentInitiative: 0,
-          participants: [],
-          createdAt: new Date(),
-          lastUpdated: new Date(),
-        };
-
-        await db.addEncounter(newEncounter);
+        const newEncounter = await encounterService.create(encounter);
         update((state) => ({
           ...state,
-          loading: false,
-          encounters: new Map(state.encounters).set(
-            newEncounter.id,
-            newEncounter,
-          ),
+          encounters: new Map(state.encounters).set(newEncounter.id, newEncounter)
         }));
-        return newEncounter.id;
+        return newEncounter;
       } catch (error) {
-        update((state) => ({
-          ...state,
-          loading: false,
-          error: error instanceof Error ? error.message : "Unknown error",
-        }));
+        console.error('Error creating encounter:', error);
+        throw error;
+      }
+    },
+
+    async updateEncounter(id: string, encounter: Partial<Encounter>) {
+      try {
+        await encounterService.update(id, encounter);
+        update((state) => {
+          const encounters = new Map(state.encounters);
+          const existing = encounters.get(id);
+          if (existing) {
+            encounters.set(id, { ...existing, ...encounter });
+          }
+          return { ...state, encounters };
+        });
+      } catch (error) {
+        console.error('Error updating encounter:', error);
+        throw error;
+      }
+    },
+
+    async deleteEncounter(id: string) {
+      try {
+        await encounterService.delete(id);
+        update((state) => {
+          const encounters = new Map(state.encounters);
+          encounters.delete(id);
+          return { ...state, encounters };
+        });
+      } catch (error) {
+        console.error('Error deleting encounter:', error);
         throw error;
       }
     },
@@ -907,7 +776,7 @@ export const error = derived(gameStore, ($gameStore) => $gameStore.error);
  * @param instanceId - ID of the instance to filter characters by
  * @returns Derived store containing only characters from the specified instance
  */
-export const getInstanceCharacters = (instanceId: string) =>
+export const instanceCharacters = (instanceId: string) =>
   derived(characters, ($characters) =>
     $characters.filter((char) => char.instanceId === instanceId),
   );
@@ -968,7 +837,7 @@ export const instancesByTag = derived(instances, ($instances) => {
  * @param instanceId - ID of the instance to filter encounters by
  * @returns Derived store containing only encounters from the specified instance
  */
-export const getInstanceEncounters = (instanceId: string) =>
+export const instanceEncounters = (instanceId: string) =>
   derived(encounters, ($encounters) =>
     $encounters.filter((e) => e.sessionId === instanceId),
   );

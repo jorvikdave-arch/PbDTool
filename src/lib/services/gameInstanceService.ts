@@ -1,130 +1,95 @@
-import { db } from "../db";
-import type { GameInstance } from "../types";
+import type { GameInstance } from '../types';
+import { db } from '../db';
 
-export class GameInstanceService {
-  static async createGameInstance(
-    gameInstance: Omit<GameInstance, "id">,
-  ): Promise<GameInstance> {
+export const gameInstanceService = {
+  async create(gameInstance: Omit<GameInstance, 'id'>): Promise<GameInstance> {
     try {
-      const id = await db.gameInstances.add(gameInstance);
-      return { ...gameInstance, id: id.toString() };
+      const id = crypto.randomUUID();
+      const newInstance = { ...gameInstance, id };
+      await db.instances.add(newInstance);
+      return newInstance;
     } catch (error) {
-      console.error("Error creating game instance:", error);
-      throw new Error("Failed to create game instance");
+      console.error('Error creating game instance:', error);
+      throw error;
     }
-  }
+  },
 
-  static async getGameInstance(id: string): Promise<GameInstance | undefined> {
+  async get(id: string): Promise<GameInstance | undefined> {
     try {
-      return await db.gameInstances.get(parseInt(id));
+      return await db.instances.get(id);
     } catch (error) {
-      console.error("Error getting game instance:", error);
-      throw new Error("Failed to get game instance");
+      console.error('Error getting game instance:', error);
+      throw error;
     }
-  }
+  },
 
-  static async updateGameInstance(
-    id: string,
-    gameInstance: Partial<GameInstance>,
-  ): Promise<void> {
+  async update(id: string, gameInstance: Partial<GameInstance>): Promise<void> {
     try {
-      await db.gameInstances.update(parseInt(id), gameInstance);
+      await db.instances.update(id, gameInstance);
     } catch (error) {
-      console.error("Error updating game instance:", error);
-      throw new Error("Failed to update game instance");
+      console.error('Error updating game instance:', error);
+      throw error;
     }
-  }
+  },
 
-  static async deleteGameInstance(id: string): Promise<void> {
+  async delete(id: string): Promise<void> {
     try {
-      await db.gameInstances.delete(parseInt(id));
+      await db.instances.delete(id);
     } catch (error) {
-      console.error("Error deleting game instance:", error);
-      throw new Error("Failed to delete game instance");
+      console.error('Error deleting game instance:', error);
+      throw error;
     }
-  }
+  },
 
-  static async getAllGameInstances(): Promise<GameInstance[]> {
+  async getAll(): Promise<GameInstance[]> {
     try {
-      return await db.gameInstances.toArray();
+      return await db.instances.toArray();
     } catch (error) {
-      console.error("Error getting all game instances:", error);
-      throw new Error("Failed to get game instances");
+      console.error('Error getting all game instances:', error);
+      throw error;
     }
-  }
+  },
 
-  static async addCharacterToGameInstance(
-    gameInstanceId: string,
-    characterId: string,
-  ): Promise<void> {
+  async addCharacter(gameInstanceId: string, characterId: string): Promise<void> {
     try {
-      const gameInstance = await this.getGameInstance(gameInstanceId);
+      const gameInstance = await db.instances.get(gameInstanceId);
       if (!gameInstance) {
-        throw new Error("Game instance not found");
+        throw new Error('Game instance not found');
       }
 
       if (!gameInstance.characters.includes(characterId)) {
-        await db.gameInstances.update(parseInt(gameInstanceId), {
-          characters: [...gameInstance.characters, characterId],
+        await db.instances.update(gameInstanceId, {
+          characters: [...gameInstance.characters, characterId]
         });
       }
     } catch (error) {
-      console.error("Error adding character to game instance:", error);
-      throw new Error("Failed to add character to game instance");
+      console.error('Error adding character to game instance:', error);
+      throw error;
     }
-  }
+  },
 
-  static async removeCharacterFromGameInstance(
-    gameInstanceId: string,
-    characterId: string,
-  ): Promise<void> {
+  async removeCharacter(gameInstanceId: string, characterId: string): Promise<void> {
     try {
-      const gameInstance = await this.getGameInstance(gameInstanceId);
+      const gameInstance = await db.instances.get(gameInstanceId);
       if (!gameInstance) {
-        throw new Error("Game instance not found");
+        throw new Error('Game instance not found');
       }
 
-      await db.gameInstances.update(parseInt(gameInstanceId), {
-        characters: gameInstance.characters.filter((id) => id !== characterId),
+      await db.instances.update(gameInstanceId, {
+        characters: gameInstance.characters.filter((id) => id !== characterId)
       });
     } catch (error) {
-      console.error("Error removing character from game instance:", error);
-      throw new Error("Failed to remove character from game instance");
+      console.error('Error removing character from game instance:', error);
+      throw error;
     }
-  }
+  },
 
-  static async addEncounterToGameInstance(
-    gameInstanceId: string,
-    encounterId: string,
-  ): Promise<void> {
+  async updateExperiencePoints(gameInstanceId: string, experiencePoints: number): Promise<void> {
     try {
-      const gameInstance = await this.getGameInstance(gameInstanceId);
-      if (!gameInstance) {
-        throw new Error("Game instance not found");
-      }
-
-      if (!gameInstance.encounters.includes(encounterId)) {
-        await db.gameInstances.update(parseInt(gameInstanceId), {
-          encounters: [...gameInstance.encounters, encounterId],
-        });
-      }
+      await db.instances.update(gameInstanceId, { experiencePoints });
     } catch (error) {
-      console.error("Error adding encounter to game instance:", error);
-      throw new Error("Failed to add encounter to game instance");
+      console.error('Error updating experience points:', error);
+      throw error;
     }
   }
-
-  static async updateExperiencePoints(
-    gameInstanceId: string,
-    experiencePoints: number,
-  ): Promise<void> {
-    try {
-      await db.gameInstances.update(parseInt(gameInstanceId), {
-        experiencePoints,
-      });
-    } catch (error) {
-      console.error("Error updating experience points:", error);
-      throw new Error("Failed to update experience points");
-    }
-  }
-}
+};
