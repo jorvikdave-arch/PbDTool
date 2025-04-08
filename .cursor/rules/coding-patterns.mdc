@@ -1,6 +1,7 @@
 ---
 description: 
 globs: 
+alwaysApply: false
 ---
 # Coding pattern preferences
 - Always prefer simple solutions
