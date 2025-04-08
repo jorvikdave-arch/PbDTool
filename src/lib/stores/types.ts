@@ -7,20 +7,28 @@
  * Eidolon: A manifestation of another character
  * Companion: An allied creature or follower
  */
-export type CharacterType = 'PC' | 'NPC' | 'Hazard' | 'Familiar' | 'Eidolon' | 'Companion';
+export type CharacterType =
+  | "PC"
+  | "NPC"
+  | "Hazard"
+  | "Familiar"
+  | "Eidolon"
+  | "Companion";
 
 /**
  * Subset of CharacterType that represents characters that must be linked to another character
  */
-export type RelatedCharacterType = 'Familiar' | 'Eidolon' | 'Companion';
+export type RelatedCharacterType = "Familiar" | "Eidolon" | "Companion";
 
 /**
  * Type guard to check if a character type requires a related character
  * @param type - The character type to check
  * @returns True if the type requires a related character
  */
-export function isRelatedCharacterType(type: CharacterType): type is RelatedCharacterType {
-  return ['Familiar', 'Eidolon', 'Companion'].includes(type);
+export function isRelatedCharacterType(
+  type: CharacterType,
+): type is RelatedCharacterType {
+  return ["Familiar", "Eidolon", "Companion"].includes(type);
 }
 
 /**
@@ -77,7 +85,7 @@ export interface GameInstance {
   /** Description of the game instance */
   description?: string;
   /** Current status of the game instance */
-  status: 'active' | 'paused' | 'completed' | 'archived';
+  status: "active" | "paused" | "completed" | "archived";
   /** Tags for organizing/filtering instances */
   tags?: string[];
   /** Private notes for the GM */
@@ -114,4 +122,4 @@ export interface Encounter {
   createdAt: Date;
   /** When the encounter was last updated */
   lastUpdated: Date;
-} 
+}
